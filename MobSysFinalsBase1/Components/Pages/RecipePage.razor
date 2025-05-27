@@ -1,0 +1,276 @@
+﻿@page "/recipes"
+@using MobSysFinalsBase1.Models
+@using MobSysFinalsBase1.Services
+@inject RecipeDbService RecipeDbService
+
+<h3>📚 Recipes</h3>
+
+<input type="text" @bind="searchTerm" placeholder="Search by title..." class="search-box" />
+
+<div>
+    <button @onclick="NewRecipe">➕ Add New Recipe</button>
+</div>
+
+@if (SelectedRecipe != null)
+{
+    <EditForm Model="SelectedRecipe" OnValidSubmit="SaveRecipe">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="form-group">
+            <InputText @bind-Value="SelectedRecipe.Title" placeholder="Title" class="form-control" />
+        </div>
+
+        <div class="form-group">
+            <InputNumber @bind-Value="SelectedRecipe.PrepTimeMinutes" placeholder="Prep Time (min)" class="form-control" />
+        </div>
+
+        <div class="form-group">
+            <label>Ingredients (one per line)</label>
+            <InputTextArea @bind-Value="ingredientsText" class="form-control" />
+        </div>
+
+        <div class="form-group">
+            <label>Instructions (one per line)</label>
+            <InputTextArea @bind-Value="instructionsText" class="form-control" />
+        </div>
+
+        <div class="form-group">
+            <button type="submit" class="btn btn-primary">💾 Save</button>
+            <button type="button" class="btn btn-secondary" @onclick="CancelEdit">❌ Cancel</button>
+        </div>
+    </EditForm>
+}
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Prep Time</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var recipe in FilteredRecipes)
+        {
+            <tr>
+                <td ondblclick="@(() => ToggleViewDetails(recipe.Id))" style="cursor: pointer;">
+                    @recipe.Title
+                </td>
+                <td>@recipe.PrepTimeMinutes min</td>
+                <td>
+                    <button class="btn btn-sm btn-warning" @onclick="() => EditRecipe(recipe)">✏️ Edit</button>
+                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteRecipe(recipe.Id)">🗑️ Delete</button>
+                </td>
+            </tr>
+
+            @if (ViewingRecipeId == recipe.Id)
+            {
+                <tr>
+                    <td colspan="3">
+                        <strong>Ingredients:</strong>
+                        <div class="mb-2">
+                            <button class="btn btn-sm btn-outline-info" @onclick="ToggleIngredientView">
+                                @(showIngredientsGrid ? "📋 Show as List" : "🔲 Show as Grid")
+                            </button>
+                            <button class="btn btn-sm btn-outline-success ms-2" @onclick="ToggleUnitDisplay">
+                                @(showMetricUnits ? "🇺🇸 Show US Units" : "🌍 Show Metric")
+                            </button>
+                        </div>
+
+                        @if (showIngredientsGrid)
+                        {
+                            <div class="ingredient-grid">
+                                @foreach (var item in recipe.Ingredients)
+                                {
+                                    <div class="ingredient-item">
+                                        @(showMetricUnits ? ConvertIngredientToMetric(item) : item)
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <ul>
+                                @foreach (var item in recipe.Ingredients)
+                                {
+                                    <li>@(showMetricUnits ? ConvertIngredientToMetric(item) : item)</li>
+                                }
+                            </ul>
+                        }
+
+                        <strong>Instructions:</strong>
+                        <div class="instruction-steps">
+                            @foreach (var step in recipe.Instructions.Select((text, index) => new { text, index }))
+                            {
+                                <div class="step-item">
+                                    <strong>Step @(step.index + 1):</strong> @step.text
+                                </div>
+                            }
+                        </div>
+                    </td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+
+<style>
+    .ingredient-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 10px;
+        margin-top: 10px;
+    }
+
+    .ingredient-item {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        padding: 8px;
+        border-radius: 4px;
+        text-align: center;
+    }
+
+    .instruction-steps {
+        margin-top: 10px;
+    }
+
+    .step-item {
+        background-color: #f9f9f9;
+        border-left: 4px solid #007bff;
+        padding: 10px;
+        margin-bottom: 8px;
+        border-radius: 4px;
+    }
+</style>
+
+@code {
+    private Guid? ViewingRecipeId = null;
+
+    private Recipe? SelectedRecipe;
+    private List<Recipe> AllRecipes = new();
+    private string searchTerm = "";
+
+    private string ingredientsText = "";
+    private string instructionsText = "";
+
+    private bool showIngredientsGrid = false;
+    private bool showMetricUnits = false;
+
+    private Dictionary<string, (string metricUnit, double factor)> unitConversions = new()
+    {
+        { "teaspoon", ("ml", 4.929) },
+        { "tablespoon", ("ml", 14.787) },
+        { "cup", ("ml", 236.588) },
+        { "pint", ("ml", 473.176) },
+        { "quart", ("ml", 946.353) },
+        { "gallon", ("liters", 3.78541) },
+        { "ounce", ("grams", 28.3495) },
+        { "pound", ("kg", 0.453592) }
+    };
+
+    string ConvertIngredientToMetric(string ingredientLine)
+    {
+        foreach (var unit in unitConversions.Keys.OrderByDescending(u => u.Length))
+        {
+            var parts = ingredientLine.ToLower().Split(' ');
+            if (parts.Length >= 2 && double.TryParse(parts[0], out double qty))
+            {
+                if (parts[1].StartsWith(unit))
+                {
+                    var conversion = unitConversions[unit];
+                    double converted = qty * conversion.factor;
+                    return $"{converted:F1} {conversion.metricUnit} {string.Join(' ', parts.Skip(2))}";
+                }
+            }
+        }
+
+        return ingredientLine; // Return as-is if not convertible
+    }
+
+    void ToggleViewDetails(Guid id)
+    {
+        ViewingRecipeId = ViewingRecipeId == id ? null : id;
+    }
+
+    void ToggleIngredientView()
+    {
+        showIngredientsGrid = !showIngredientsGrid;
+    }
+
+    void ToggleUnitDisplay()
+    {
+        showMetricUnits = !showMetricUnits;
+    }
+
+    protected override void OnInitialized()
+    {
+        LoadRecipes();
+    }
+
+    void LoadRecipes()
+    {
+        AllRecipes = RecipeDbService.GetAll();
+    }
+
+    void NewRecipe()
+    {
+        SelectedRecipe = new Recipe();
+        ingredientsText = "";
+        instructionsText = "";
+    }
+
+    void EditRecipe(Recipe recipe)
+    {
+        SelectedRecipe = new Recipe
+            {
+                Id = recipe.Id,
+                Title = recipe.Title,
+                PrepTimeMinutes = recipe.PrepTimeMinutes,
+                Ingredients = new List<string>(recipe.Ingredients),
+                Instructions = new List<string>(recipe.Instructions)
+            };
+
+        ingredientsText = string.Join("\n", recipe.Ingredients);
+        instructionsText = string.Join("\n", recipe.Instructions);
+    }
+
+    void SaveRecipe()
+    {
+        if (SelectedRecipe == null) return;
+
+        SelectedRecipe.Ingredients = ingredientsText
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(i => i.Trim())
+            .ToList();
+
+        SelectedRecipe.Instructions = instructionsText
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(i => i.Trim())
+            .ToList();
+
+        RecipeDbService.AddOrUpdate(SelectedRecipe);
+        SelectedRecipe = null;
+        LoadRecipes();
+    }
+
+    void CancelEdit()
+    {
+        SelectedRecipe = null;
+        ingredientsText = "";
+        instructionsText = "";
+    }
+
+    void DeleteRecipe(Guid id)
+    {
+        RecipeDbService.Delete(id);
+        if (SelectedRecipe?.Id == id)
+            SelectedRecipe = null;
+
+        LoadRecipes();
+    }
+
+    private IEnumerable<Recipe> FilteredRecipes =>
+        AllRecipes.Where(r => string.IsNullOrWhiteSpace(searchTerm) ||
+                              r.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+}
