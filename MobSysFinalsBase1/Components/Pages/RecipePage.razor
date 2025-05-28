@@ -17,23 +17,71 @@
         <DataAnnotationsValidator />
         <ValidationSummary />
 
-        <div class="form-group">
-            <InputText @bind-Value="SelectedRecipe.Title" placeholder="Title" class="form-control" />
-        </div>
+        <fieldset class="hasText">
+            <legend>Title:</legend>
+            <div class="form-group">
+                <InputText @bind-Value="SelectedRecipe.Title" placeholder="" class="form-control" />
+            </div>
+        </fieldset>
 
-        <div class="form-group">
-            <InputNumber @bind-Value="SelectedRecipe.PrepTimeMinutes" placeholder="Prep Time (min)" class="form-control" />
-        </div>
+        <fieldset class="hasText">
+            <legend>Prep Time (min):</legend>
+            <div class="form-group">
+                <InputNumber @bind-Value="SelectedRecipe.PrepTimeMinutes" placeholder="Prep Time (min)" class="form-control" />
+            </div>
+        </fieldset>
 
-        <div class="form-group">
-            <label>Ingredients (one per line)</label>
-            <InputTextArea @bind-Value="ingredientsText" class="form-control" />
-        </div>
+        <fieldset class="hasText">
+            <legend>Ingredients:</legend>
+            <div class="editable-list">
+                <ul>
+                    @foreach (var ingredient in Ingredients)
+                    {
+                        <li>
+                            @ingredient.Amount @ingredient.Unit - @ingredient.Name
+                            <button @onclick="@(() => RemoveIngredient(ingredient))">❌ Remove</button>
+                        </li>
+                    }
+                </ul>
 
-        <div class="form-group">
-            <label>Instructions (one per line)</label>
-            <InputTextArea @bind-Value="instructionsText" class="form-control" />
-        </div>
+                <hr />
+                <table style="width: 100%;">
+                    <tr>
+                        <td style="width: 70px;"><input type="number" step="0.1" class="" /></td>
+                        <td>
+                            <select>
+                                <option></option>
+                                <option>lb</option>
+                                <option>ounces</option>
+                                <option>g</option>
+                                <option>kg</option>
+                                <option>cup</option>
+                                <option>liter</option>
+                                <option>tablespoon</option>
+                                <option>teaspoon</option>
+                                <option>piece(s)</option>
+                            </select>
+                        </td>
+                        <td colspan="1" rowspan="2">
+                            <button class="btn btn-success" @bind="SaveIngredient" style=" height: 100%; width: 50px; margin: 5px; padding: 25px 6px; font-size: 30px; ">Add</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="2">
+                            <input type="text" placeholder="Add Ingredient here" class="" />
+                        </td>
+                    </tr>
+                </table>
+
+            </div>
+        </fieldset>
+
+        <fieldset class="hasText">
+            <legend>Instructions:</legend>
+            <div class="form-group">
+                <InputTextArea @bind-Value="instructionsText" class="form-control" />
+            </div>
+        </fieldset>
 
         <div class="form-group">
             <button type="submit" class="btn btn-primary">💾 Save</button>
@@ -151,7 +199,9 @@
     private List<Recipe> AllRecipes = new();
     private string searchTerm = "";
 
-    private string ingredientsText = "";
+    private List<Ingredient> Ingredients = new();
+    private Ingredient NewIngredient = new();
+
     private string instructionsText = "";
 
     private bool showIngredientsGrid = false;
@@ -188,6 +238,26 @@
         return ingredientLine; // Return as-is if not convertible
     }
 
+    void SaveIngredient()
+    {
+        if (!string.IsNullOrWhiteSpace(NewIngredient.Name) && NewIngredient.Amount > 0)
+        {
+            Ingredients.Add(new Ingredient
+                {
+                    Name = NewIngredient.Name,
+                    Amount = NewIngredient.Amount,
+                    Unit = NewIngredient.Unit
+                });
+
+            // Clear input fields
+            NewIngredient = new Ingredient();
+            StateHasChanged(); // Refresh UI
+        }
+    }
+
+
+
+
     void ToggleViewDetails(Guid id)
     {
         ViewingRecipeId = ViewingRecipeId == id ? null : id;
@@ -216,7 +286,7 @@
     void NewRecipe()
     {
         SelectedRecipe = new Recipe();
-        ingredientsText = "";
+        
         instructionsText = "";
     }
 
@@ -231,7 +301,7 @@
                 Instructions = new List<string>(recipe.Instructions)
             };
 
-        ingredientsText = string.Join("\n", recipe.Ingredients);
+        // ingredientsText = string.Join("\n", recipe.Ingredients);
         instructionsText = string.Join("\n", recipe.Instructions);
     }
 
@@ -239,25 +309,40 @@
     {
         if (SelectedRecipe == null) return;
 
-        SelectedRecipe.Ingredients = ingredientsText
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(i => i.Trim())
-            .ToList();
+        // Convert text inputs into list format
+        // SelectedRecipe.Ingredients = ingredientsText
+        //     .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+        //     .Select(i => i.Trim())
+        //     .ToList();
 
         SelectedRecipe.Instructions = instructionsText
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(i => i.Trim())
             .ToList();
 
+        // Update the database
         RecipeDbService.AddOrUpdate(SelectedRecipe);
+
+        // Clear selection & reload data
         SelectedRecipe = null;
         LoadRecipes();
+
+        // Force UI refresh
+        StateHasChanged();
     }
+
+    void RemoveIngredient(Ingredient ingredient)
+    {
+        Ingredients.Remove(ingredient);
+        StateHasChanged(); // Refresh UI after removal
+    }
+
+
 
     void CancelEdit()
     {
         SelectedRecipe = null;
-        ingredientsText = "";
+        // ingredientsText = "";
         instructionsText = "";
     }
 
@@ -270,7 +355,8 @@
         LoadRecipes();
     }
 
-    private IEnumerable<Recipe> FilteredRecipes =>
-        AllRecipes.Where(r => string.IsNullOrWhiteSpace(searchTerm) ||
-                              r.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<Recipe> FilteredRecipes => AllRecipes
+    .Where(r => string.IsNullOrWhiteSpace(searchTerm) || r.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+    .ToList();
+
 }
